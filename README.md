@@ -22,6 +22,9 @@ MuJoCo 1.5 & MuJoCo 2.0
 
 > python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 300 --model_type 'pytorch'
 
+
+> python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 300 --replay_size 1000
+
 ## Reference
 * Official tensorflow implementation: https://github.com/JannerM/mbpo
 * Code to the reproducibility challenge paper: https://github.com/jxu43/replication-mbpo

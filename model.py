@@ -9,7 +9,8 @@ import math
 import gzip
 import itertools
 
-device = torch.device('cuda')
+# device = torch.device('cuda')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_train = 60000  # 60k train examples
 num_test = 10000  # 10k test examples

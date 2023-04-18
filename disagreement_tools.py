@@ -21,7 +21,7 @@ def KL_divergence(num_models, batch_size, model_idxes, batch_idxes, model_means,
     return rewards_exploration
 
 
-def model_disagreement(batch_size, ensemble_model_means):
+def model_disagreement(batch_size, ensemble_model_means):  # (7, 100000, 12)
 
     rewards_exploration = np.var(ensemble_model_means, axis=0)
     rewards_exploration = np.mean(rewards_exploration, axis=-1)

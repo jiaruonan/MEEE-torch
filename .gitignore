@@ -5,6 +5,8 @@ __pycache__/
 
 # mac
 .DS_Store
+/exp_mbpo_ensemble
+.vscode
 
 # C extensions
 *.so

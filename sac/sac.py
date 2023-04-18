@@ -4,7 +4,17 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from sac.utils import  soft_update, hard_update
 from sac.model import GaussianPolicy, QNetwork, DeterministicPolicy
+import disagreement_tools
 
+def weighted_mse_loss(inputs, targets, weights):
+    return (weights * (inputs - targets) ** 2).mean()
+
+class weighted_MSELoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self,inputs,targets, weights):
+        return ((inputs - targets) ** 2 ) * weights
 
 class SAC(object):
     def __init__(self, num_inputs, action_space, args):
@@ -17,7 +27,8 @@ class SAC(object):
         self.target_update_interval = args.target_update_interval
         self.automatic_entropy_tuning = args.automatic_entropy_tuning
 
-        self.device = torch.device("cuda")
+        # self.device = torch.device("cuda")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
@@ -49,10 +60,10 @@ class SAC(object):
             _, _, action = self.policy.sample(state)
         return action.detach().cpu().numpy()[0]
 
-    def update_parameters(self, memory, batch_size, updates):
+    def update_parameters(self, memory, batch_size, batch_isTrue, predict_env, updates):
         # Sample a batch from memory
         # state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory
+        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory  # state_batch.shape [12, 11]
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
@@ -66,29 +77,63 @@ class SAC(object):
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
 
-        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
+        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step  # [batch_size, 1]
 
-        qf1_loss = F.mse_loss(qf1, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
-        qf2_loss = F.mse_loss(qf2, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+        # Uncertainty-weighted exploitation:
+        if torch.min(batch_isTrue) == 0:  # 判断 batch 内是否存在 fake transition
+            weights = torch.ones_like(batch_isTrue)
+            T = 20
+            fake_state_batch = state_batch[batch_isTrue == 0]
+            fake_action_batch = action_batch[batch_isTrue == 0]
+            fake_size = fake_state_batch.shape[0]
 
-        pi, log_pi, _ = self.policy.sample(state_batch)
+            with torch.no_grad():
+                inputs = torch.cat((fake_state_batch, fake_action_batch), axis=-1)
+                ensemble_model_means, _ = predict_env.model.ensemble_model(inputs[None, :, :].repeat([predict_env.model.network_size, 1, 1]))
+                ensemble_model_means = ensemble_model_means.numpy()
+                rewards_exploration = torch.tensor(disagreement_tools.model_disagreement(fake_size, ensemble_model_means)).float()
+                weights[batch_isTrue == 0] = torch.sigmoid(- rewards_exploration * T).squeeze() + 0.5
 
-        qf1_pi, qf2_pi = self.critic(state_batch, pi)
-        min_qf_pi = torch.min(qf1_pi, qf2_pi)
+            qf1_loss = weighted_mse_loss(qf1, next_q_value, weights) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+            qf2_loss = weighted_mse_loss(qf2, next_q_value, weights) # JQ = 𝔼(st,at)~D[0.5(Q2(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
 
-        policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
+            pi, log_pi, _ = self.policy.sample(state_batch)
 
-        self.policy_optim.zero_grad()
-        policy_loss.backward()
-        self.policy_optim.step()
+            qf1_pi, qf2_pi = self.critic(state_batch, pi)
+            min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
-        self.critic_optim.zero_grad()
-        (qf1_loss+qf2_loss).backward()
-        self.critic_optim.step()
+            policy_loss = (weights * ((self.alpha * log_pi) - min_qf_pi)).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
 
-        # self.critic_optim.zero_grad()
-        # qf2_loss.backward()
-        # self.critic_optim.step()
+            self.policy_optim.zero_grad()
+            policy_loss.backward()
+            self.policy_optim.step()
+
+            self.critic_optim.zero_grad()
+            (qf1_loss+qf2_loss).backward()
+            self.critic_optim.step()
+
+        else:
+            qf1_loss = F.mse_loss(qf1, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+            qf2_loss = F.mse_loss(qf2, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q2(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+
+            pi, log_pi, _ = self.policy.sample(state_batch)
+
+            qf1_pi, qf2_pi = self.critic(state_batch, pi)
+            min_qf_pi = torch.min(qf1_pi, qf2_pi)
+
+            policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
+
+            self.policy_optim.zero_grad()
+            policy_loss.backward()
+            self.policy_optim.step()
+
+            self.critic_optim.zero_grad()
+            (qf1_loss+qf2_loss).backward()
+            self.critic_optim.step()
+
+            # self.critic_optim.zero_grad()
+            # qf2_loss.backward()
+            # self.critic_optim.step()
 
         if self.automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()

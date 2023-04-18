@@ -1,11 +1,13 @@
 import numpy as np
+import disagreement_tools
 
 
 class PredictEnv:
-    def __init__(self, model, env_name, model_type):
+    def __init__(self, model, env_name, model_type, exploration_type):
         self.model = model
         self.env_name = env_name
         self.model_type = model_type
+        self.exploration_type = exploration_type
 
     def _termination_fn(self, env_name, obs, act, next_obs):
         # TODO
@@ -129,7 +131,7 @@ class PredictEnv:
 
         return log_prob, stds
 
-    def step(self, obs, act, deterministic=False):
+    def step(self, obs, act, exploration_rate, deterministic=False):
         if len(obs.shape) == 1:
             obs = obs[None]
             act = act[None]
@@ -151,6 +153,7 @@ class PredictEnv:
             ensemble_samples = ensemble_model_means + np.random.normal(size=ensemble_model_means.shape) * ensemble_model_stds
 
         num_models, batch_size, _ = ensemble_model_means.shape
+
         if self.model_type == 'pytorch':
             model_idxes = np.random.choice(self.model.elite_model_idxes, size=batch_size)
         else:
@@ -160,11 +163,37 @@ class PredictEnv:
         samples = ensemble_samples[model_idxes, batch_idxes]
         model_means = ensemble_model_means[model_idxes, batch_idxes]
         model_stds = ensemble_model_stds[model_idxes, batch_idxes]
+        model_vars = ensemble_model_vars[model_idxes, batch_idxes]
+
+        ###calculate model disagreement，KL divergence
+
+        # model_index = np.arange(0, num_models).tolist()
+        # model_inds_rest = np.array([model_index[:i] + model_index[i + 1:] for i in model_idxes])
+        #
+        # model_means_rest = np.array(
+        #     [ensemble_model_means[model_inds_rest[:, n], batch_idxes, 1:] for n in range(num_models - 1)])
+        # model_vars_rest = np.array(
+        #     [ensemble_model_vars[model_inds_rest[:, n], batch_idxes, 1:] for n in range(num_models - 1)])
+        # model_means_rest = np.mean(model_means_rest, axis=0)
+        # model_vars_rest = np.mean(model_vars_rest + model_means_rest ** 2, axis=0) - model_means_rest ** 2
+        #
+        # KLdivergence_list = np.log(model_vars_rest / model_vars[:, 1:]) - 0.5 + (
+        #         model_vars[:, 1:] + np.square(model_means[:, 1:] - model_means_rest)) / (2 * model_vars_rest)
+        # KL_result = np.sum(KLdivergence_list, axis=-1)
+        # rewards_exploration = np.reshape(KL_result, [batch_size, 1])
+        if self.exploration_type == 'KL':
+            rewards_exploration = disagreement_tools.KL_divergence(num_models, batch_size, model_idxes, batch_idxes, model_means, model_vars, ensemble_model_means, ensemble_model_vars)
+        elif self.exploration_type == 'model_disagreement':
+            rewards_exploration = disagreement_tools.model_disagreement(batch_size, ensemble_model_means)
+        else:
+            rewards_exploration = 0
 
         log_prob, dev = self._get_logprob(samples, ensemble_model_means, ensemble_model_vars)
 
         rewards, next_obs = samples[:, :1], samples[:, 1:]
         terminals = self._termination_fn(self.env_name, obs, act, next_obs)
+
+        rewards_exploration = rewards + exploration_rate * rewards_exploration
 
         batch_size = model_means.shape[0]
         return_means = np.concatenate((model_means[:, :1], terminals, model_means[:, 1:]), axis=-1)
@@ -178,4 +207,4 @@ class PredictEnv:
             terminals = terminals[0]
 
         info = {'mean': return_means, 'std': return_stds, 'log_prob': log_prob, 'dev': dev}
-        return next_obs, rewards, terminals, info
+        return next_obs, rewards, rewards_exploration, terminals, info

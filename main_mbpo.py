@@ -14,6 +14,7 @@ import json
 from sac.replay_memory import ReplayMemory
 from sac.sac import SAC
 from model import EnsembleDynamicsModel
+# from predict_env_new import PredictEnv
 from predict_env import PredictEnv
 from sample_env import EnvSampler
 # from tf_models.constructor import construct_model, format_samples_for_training
@@ -26,6 +27,9 @@ def readParser():
                         help='Mujoco Gym environment (default: Hopper-v2)')
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
+    # new feature
+    parser.add_argument('--exploration_type', default='model_disagreement')
+    
 
     parser.add_argument('--use_decay', type=bool, default=True, metavar='G',
                         help='discount factor for reward (default: 0.99)')
@@ -115,12 +119,14 @@ def train(args, env_sampler, env_sampler_test, predict_env, agent, env_pool, mod
     reward_sum = 0
     rollout_length = 1
     print(time.localtime())
+    # warmup: collect env transition
     exploration_before_start(args, env_sampler, env_pool, agent)
 
     for epoch_step in range(args.num_epoch):
         print ("total_epoch: {}".format(epoch_step))
         start_step = total_step
         train_policy_steps = 0
+
         for i in count():
             cur_step = total_step - start_step
 
@@ -142,10 +148,11 @@ def train(args, env_sampler, env_sampler_test, predict_env, agent, env_pool, mod
                 rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length)
 
             cur_state, action, next_state, reward, done, info = env_sampler.sample(agent)
+            # print(cur_state.shape)  # hopper (11,)
             env_pool.push(cur_state, action, reward, next_state, done)
 
             if len(env_pool) > args.min_pool_size:
-                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent)
+                train_policy_steps += train_policy_repeats(args, total_step, train_policy_steps, cur_step, env_pool, model_pool, agent, predict_env)
 
             total_step += 1
 
@@ -231,20 +238,22 @@ def rollout_model(args, predict_env, agent, model_pool, env_pool, rollout_length
         state = next_states[nonterm_mask]
 
 
-def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent):
+def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model_pool, agent, predict_env):
     if total_step % args.train_every_n_steps > 0:
         return 0
 
     if train_step > args.max_train_repeat_per_step * total_step:
         return 0
 
-    for i in range(args.num_train_repeat):
+    for i in range(args.num_train_repeat):  # 20
+        batch_isTrue = torch.ones(args.policy_train_batch_size)  # 1 means real transition, 0 means fake transition.
         env_batch_size = int(args.policy_train_batch_size * args.real_ratio)
         model_batch_size = args.policy_train_batch_size - env_batch_size
 
         env_state, env_action, env_reward, env_next_state, env_done = env_pool.sample(int(env_batch_size))
 
         if model_batch_size > 0 and len(model_pool) > 0:
+            batch_isTrue[env_batch_size:] = 0
             model_state, model_action, model_reward, model_next_state, model_done = model_pool.sample_all_batch(int(model_batch_size))
             batch_state, batch_action, batch_reward, batch_next_state, batch_done = np.concatenate((env_state, model_state), axis=0), \
                                                                                     np.concatenate((env_action, model_action),
@@ -258,7 +267,7 @@ def train_policy_repeats(args, total_step, train_step, cur_step, env_pool, model
 
         batch_reward, batch_done = np.squeeze(batch_reward), np.squeeze(batch_done)
         batch_done = (~batch_done).astype(int)
-        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, i)
+        agent.update_parameters((batch_state, batch_action, batch_reward, batch_next_state, batch_done), args.policy_train_batch_size, batch_isTrue, predict_env, i)
 
     return args.num_train_repeat
 
@@ -330,6 +339,7 @@ def main(args=None):
 
     # Predict environments
     predict_env = PredictEnv(env_model, args.env_name, args.model_type)
+    # predict_env = PredictEnv(env_model, args.env_name, args.model_type, args.exploration_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
@@ -340,8 +350,8 @@ def main(args=None):
     model_pool = ReplayMemory(new_pool_size)
     print(next(env_model.ensemble_model.parameters()).device)
     # Sampler of environment
-    env_sampler = EnvSampler(env)
-    env_sampler_test = EnvSampler(env_test)
+    env_sampler = EnvSampler(env, predict_env)
+    env_sampler_test = EnvSampler(env_test, predict_env)
 
     train(args, env_sampler, env_sampler_test, predict_env, agent, env_pool, model_pool, logger)
 
