@@ -1,6 +1,6 @@
 import torch
 
-torch.set_default_tensor_type(torch.cuda.FloatTensor)
+# torch.set_default_tensor_type(torch.cuda.FloatTensor)
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -250,14 +250,14 @@ class EnsembleDynamicsModel():
                 if break_train:
                     print('model_epoch: {}, losses_avg: {}, losses_std: {}'
                           .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
-                    logger.info('model_epoch: {}, losses_avg: {}, losses_std: {}'
-                                .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
+                    # logger.info('model_epoch: {}, losses_avg: {}, losses_std: {}'
+                    #             .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
                     break
             if epoch % 100 == 0:
                 print('model_epoch: {}, losses_avg: {}, losses_std: {}'
                       .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
-                logger.info('model_epoch: {}, losses_avg: {}, losses_std: {}'
-                            .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
+                # logger.info('model_epoch: {}, losses_avg: {}, losses_std: {}'
+                #             .format(epoch, np.mean(holdout_mse_losses), np.sqrt(np.var(holdout_mse_losses))))
 
     def _save_best(self, epoch, holdout_losses):
         updated = False

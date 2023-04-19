@@ -23,7 +23,9 @@ MuJoCo 1.5 & MuJoCo 2.0
 > python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 300 --model_type 'pytorch'
 
 
-> python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 300 --replay_size 1000
+> for debug:
+> python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 150 --exp_name 'hopper-1' --replay_size 1000
+> python main_mbpo_dmc.py --domain_name 'cartpole' --task_name 'swingup' --num_epoch 110 --exp_name 'cartpole-swingup-1' --replay_size 1000
 
 ## Reference
 * Official tensorflow implementation: https://github.com/JannerM/mbpo

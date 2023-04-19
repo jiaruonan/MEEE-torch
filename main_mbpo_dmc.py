@@ -15,15 +15,23 @@ from sac.replay_memory import ReplayMemory
 from sac.sac import SAC
 from model import EnsembleDynamicsModel
 # from predict_env_new import PredictEnv
-from predict_env import PredictEnv
+# from predict_env import PredictEnv
+from predict_env_dmc import PredictEnvDMC
 from sample_env import EnvSampler
 # from tf_models.constructor import construct_model, format_samples_for_training
 import copy
+import dmc2gym
 
 
 def readParser():
     parser = argparse.ArgumentParser(description='MBPO')
-    parser.add_argument('--env_name', default="Hopper-v2",
+    
+    # for dmc arg
+    parser.add_argument('--domain_name', default="walker",
+                        help='DMC env')
+    parser.add_argument('--task_name', default="run",
+                        help='DMC env')
+    parser.add_argument('--env_name', default="None",
                         help='Mujoco Gym environment (default: Hopper-v2)')
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
@@ -105,7 +113,7 @@ def readParser():
 
     parser.add_argument('--exp_name', default='exp1',
                         help='your model save path')
-    parser.add_argument('--save_dir', default='./exp_meee_mujoco/',
+    parser.add_argument('--save_dir', default='./exp_meee_dmc/',
                         help='your model save path')
 
     # parser.add_argument('--rewight', default=True, action="store_true",
@@ -175,8 +183,8 @@ def train(args, env_sampler, env_sampler_test, predict_env, agent, env_pool, mod
             if total_step % 100000 == 0:
                 try:
                     # save model
-                    # model_file = os.path.join(args.exp_dir, 'model_last.pt')
                     model_file = os.path.join(args.exp_dir, args.exp_name, 'model_{}.pt'.format(total_step))
+                    # model_file = os.path.join(args.exp_dir, 'model_{}.pt'.format(total_step))
                     torch.save({'Dynamics': predict_env.model.ensemble_model.state_dict(),
                                 'Policy': agent.policy.state_dict(),
                                 'Critic': agent.critic.state_dict(),
@@ -319,8 +327,11 @@ def main(args=None):
     logger.addHandler(handler)
 
     # Initial environment
-    env = gym.make(args.env_name)
-    env_test = gym.make(args.env_name)
+    # env = gym.make(args.env_name)
+    # env_test = gym.make(args.env_name)
+    ## for dmc env
+    env = dmc2gym.make(domain_name=args.domain_name, task_name=args.task_name, seed=args.seed, visualize_reward=False)
+    env_test = dmc2gym.make(domain_name=args.domain_name, task_name=args.task_name, seed=args.seed, visualize_reward=False)
 
     # Set random seed
     torch.manual_seed(args.seed)
@@ -343,8 +354,9 @@ def main(args=None):
         #                             num_elites=args.num_elites)
 
     # Predict environments
-    predict_env = PredictEnv(env_model, args.env_name, args.model_type)
+    # predict_env = PredictEnv(env_model, args.env_name, args.model_type)
     # predict_env = PredictEnv(env_model, args.env_name, args.model_type, args.exploration_type)
+    predict_env = PredictEnvDMC(env_model, args.env_name, args.model_type)
 
     # Initial pool for env
     env_pool = ReplayMemory(args.replay_size)
