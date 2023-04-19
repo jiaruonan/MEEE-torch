@@ -15,16 +15,19 @@ MuJoCo 1.5 & MuJoCo 2.0
 
 ## Usage
 > CUDA_VISIBLE_DEVICES=2 python main_mbpo.py --env_name 'Ant-v2' --num_epoch 300 --model_type 'pytorch' --exp_name ant --num_networks 2 --num_elites 2 --seed 1
-> 
-> 
+>  
 > CUDA_VISIBLE_DEVICES=2 python main_mbpo.py --env_name 'InvertedPendulum-v2' --num_epoch 400 --exp_name inver_mbpo_0
 
-
-> python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 300 --model_type 'pytorch'
-
+> my launch:
+>
+> python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 120
+>
+> python main_mbpo_dmc.py --domain_name 'cartpole' --task_name 'swingup' --num_epoch 110 --exp_name 'cartpole-swingup-1'
 
 > for debug:
+>
 > python main_mbpo.py --env_name 'Hopper-v2' --num_epoch 150 --exp_name 'hopper-1' --replay_size 1000
+>
 > python main_mbpo_dmc.py --domain_name 'cartpole' --task_name 'swingup' --num_epoch 110 --exp_name 'cartpole-swingup-1' --replay_size 1000
 
 ## Reference
