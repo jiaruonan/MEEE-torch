@@ -27,8 +27,8 @@ class SAC(object):
         self.target_update_interval = args.target_update_interval
         self.automatic_entropy_tuning = args.automatic_entropy_tuning
 
-        # self.device = torch.device("cuda")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda")
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
@@ -89,13 +89,13 @@ class SAC(object):
 
             with torch.no_grad():
                 inputs = torch.cat((fake_state_batch, fake_action_batch), axis=-1)
-                ensemble_model_means, _ = predict_env.model.ensemble_model(inputs[None, :, :].repeat([predict_env.model.network_size, 1, 1]))
-                ensemble_model_means = ensemble_model_means.numpy()
+                ensemble_model_means, _ = predict_env.model.ensemble_model(inputs[None, :, :].cuda().repeat([predict_env.model.network_size, 1, 1]))
+                ensemble_model_means = ensemble_model_means.cpu().numpy()
                 rewards_exploration = torch.tensor(disagreement_tools.model_disagreement(fake_size, ensemble_model_means)).float()
                 weights[batch_isTrue == 0] = torch.sigmoid(- rewards_exploration * T).squeeze() + 0.5
 
-            qf1_loss = weighted_mse_loss(qf1, next_q_value, weights) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
-            qf2_loss = weighted_mse_loss(qf2, next_q_value, weights) # JQ = 𝔼(st,at)~D[0.5(Q2(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+            qf1_loss = weighted_mse_loss(qf1, next_q_value, weights.cuda()) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+            qf2_loss = weighted_mse_loss(qf2, next_q_value, weights.cuda()) # JQ = 𝔼(st,at)~D[0.5(Q2(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
 
             pi, log_pi, _ = self.policy.sample(state_batch)
 

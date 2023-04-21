@@ -1,6 +1,6 @@
 import torch
 
-# torch.set_default_tensor_type(torch.cuda.FloatTensor)
+torch.set_default_tensor_type(torch.cuda.FloatTensor)
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable

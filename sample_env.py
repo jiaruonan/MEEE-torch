@@ -33,18 +33,18 @@ class EnvSampler():
             cur_state_stack_torch = torch.from_numpy(cur_state_stack_np).float()
             
             with torch.no_grad():
-                qf1, qf2 = agent.critic(cur_state_stack_torch, action_stack_torch)  # [K, 1]
+                qf1, qf2 = agent.critic(cur_state_stack_torch.cuda(), action_stack_torch.cuda())  # [K, 1]
 
                 inputs = torch.cat((cur_state_stack_torch, action_stack_torch), axis=-1)
-                ensemble_model_means, _ = self.predict_env.model.ensemble_model(inputs[None, :, :].repeat([self.predict_env.model.network_size, 1, 1])) # [7, 5, 12]
-                ensemble_model_means = ensemble_model_means.numpy()
+                ensemble_model_means, _ = self.predict_env.model.ensemble_model(inputs[None, :, :].cuda().repeat([self.predict_env.model.network_size, 1, 1])) # [7, 5, 12]
+                ensemble_model_means = ensemble_model_means.cpu().numpy()
                 rewards_exploration = disagreement_tools.model_disagreement(K, ensemble_model_means)  # [K, 1]
 
                 # next_obs, _, _, _ = self.predict_env.step(cur_state_stack_torch, action_stack_torch)
                 # bug: AttributeError: 'StandardScaler' object has no attribute 'mu', 由于方法中初始化顺序不对.
 
                 # choose the first Qnet to estimate Q_exploration
-                Q_exploration = qf1.numpy() + lambda_arg * rewards_exploration
+                Q_exploration = qf1.cpu().numpy() + lambda_arg * rewards_exploration
                 
                 action = action_list_np[np.argmax(Q_exploration)]
 
