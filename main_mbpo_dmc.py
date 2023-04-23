@@ -138,7 +138,7 @@ def train(args, env_sampler, env_sampler_test, predict_env, agent, env_pool, mod
         for i in count():
             cur_step = total_step - start_step
 
-            if cur_step >= start_step + args.epoch_length and len(env_pool) > args.min_pool_size:
+            if cur_step >= args.epoch_length and len(env_pool) > args.min_pool_size:
                 break
             # train T and get \hat{D} every args.model_train_freq=250 times.
             if cur_step > 0 and cur_step % args.model_train_freq == 0 and args.real_ratio < 1.0:
